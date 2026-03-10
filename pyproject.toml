@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "writing-utils"
+version = "0.1.0"
+description = "Utilities for formatting creative writing files for publishing"
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.8"
+dependencies = [
+    "python-docx",
+    "pyyaml",
+]
+
+[project.scripts]
+clean-docx = "writing_utils.clean_docx:main"
+clean-markdown = "writing_utils.clean_markdown:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
