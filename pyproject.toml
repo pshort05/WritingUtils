@@ -7,7 +7,8 @@ name = "writing-utils"
 version = "0.1.0"
 description = "Utilities for formatting creative writing files for publishing"
 readme = "README.md"
-license = { file = "LICENSE" }
+license = "MIT"
+license-files = ["LICENSE"]
 requires-python = ">=3.8"
 dependencies = [
     "python-docx",
@@ -17,6 +18,7 @@ dependencies = [
 [project.scripts]
 clean-docx = "writing_utils.clean_docx:main"
 clean-markdown = "writing_utils.clean_markdown:main"
+format-docx = "writing_utils.format_docx:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

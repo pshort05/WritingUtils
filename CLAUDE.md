@@ -161,3 +161,165 @@ Features always run in this fixed order regardless of flag order:
 - The `--end` heading itself is **not** processed — the range stops at the paragraph immediately before it.
 - After `--clean` removes paragraphs, paragraph indices shift. The script re-resolves `(start_idx, end_idx)` silently before each subsequent feature to keep indices accurate.
 - Boolean flags use `BooleanOptionalAction` — both `--clean` and `--no-clean` exist, allowing CLI to override a `true` set in the config file.
+
+---
+
+## format-docx — Implementation Plan
+
+New utility for producing platform-specific publishing versions (KDP, print) from a single source `.docx`. Configured by separate YAML files (`kdp.yaml`, `print.yaml`).
+
+### Typical pipeline
+
+```bash
+# Step 1: clean the raw export once
+clean-docx -c clean.yaml
+
+# Step 2: format for each platform (from the cleaned file)
+format-docx -c kdp.yaml
+format-docx -c print.yaml
+```
+
+### Architecture
+
+- **New file:** `src/writing_utils/format_docx.py`
+- **Shared utilities:** `load_config()` and `setup_logging()` extracted from `clean_docx.py` into `src/writing_utils/_util.py`; both tools import from there
+- **Reused functions** imported directly from `clean_docx.py` (no modification): `fix_hrules`, `collect_removals`, `insert_page_breaks`, `convert_fonts`, `find_heading`, `resolve_range`
+
+### Execution order inside format-docx
+
+1. `fix-hrules` (must precede clean)
+2. `clean`
+3. `page-breaks`
+4. `font-to` (document-wide)
+5. `page-size` (section geometry)
+6. `margins` (includes mirror-margins XML)
+7. `spacing` (style-level defaults — applied globally)
+8. `body-format` (per-paragraph overrides within range — skips headings, centered/right text)
+9. `headers` (needs page geometry for tab stop positions)
+10. `footers`
+
+### New YAML keys (beyond what clean-docx already supports)
+
+```yaml
+page-size:
+  width:  "5.5in"        # accepts: in, mm, cm, pt
+  height: "8.5in"
+
+margins:
+  top:     "1in"
+  bottom:  "1in"
+  inside:  "0.875in"     # binding side (mirror margins)
+  outside: "0.75in"
+  gutter:  "0in"
+  header:  "0.5in"       # top-of-page to header top
+  footer:  "0.5in"       # bottom-of-page to footer bottom
+
+mirror-margins: true     # enables facing-pages mode
+
+spacing:                 # applied to named styles, not inline paragraphs
+  normal:
+    line-spacing:      "double"   # single | 1.5 | double | exactly:12pt | multiple:1.5
+    first-line-indent: "0.5in"
+    space-before:      "0pt"
+    space-after:       "0pt"
+  heading-1:
+    space-before: "12pt"
+    space-after:  "6pt"
+
+doc-title:  "My Book Title"   # substituted for {title} token in headers/footers
+doc-author: "Author Name"     # substituted for {author} token
+
+header-mode: "odd-even"       # none | uniform | odd-even | first-different
+header:
+  odd:
+    left:   ""
+    center: "{title}"          # tokens: {title} {author} {page}
+    right:  "{page}"
+    font:   "Times New Roman"
+    size:   "10pt"
+    italic: true
+  even:
+    left:   "{page}"
+    center: "{author}"
+    right:  ""
+    font:   "Times New Roman"
+    size:   "10pt"
+    italic: true
+
+footer-mode: "none"            # none | uniform | odd-even
+```
+
+### python-docx vs. raw XML
+
+Features requiring raw XML (lxml):
+- **Mirror margins** — inject `<w:mirrorMargins/>` into `doc.settings.element`
+- **Page number field** — `{page}` token becomes `<w:fldChar>`/`<w:instrText> PAGE </w:instrText>` sequence; no public API
+- **Three-part header layout** — tab stops at computed center/right positions injected as `w:tabs` XML
+
+Everything else (page size, margins, header text/font, odd/even header enable, style spacing) uses the python-docx public API.
+
+### Implementation checklist
+
+#### Phase 0 — Shared utilities
+- [x] Create `src/writing_utils/_util.py` — move `load_config()`, `setup_logging()`, `_LOG_LEVELS` from `clean_docx.py`
+- [x] Update `clean_docx.py` to import from `_util`; verify existing behavior unchanged
+
+#### Phase 1 — Skeleton
+- [ ] Create `format_docx.py` with `main()`, argparse, `apply_config()` — opens doc, saves unchanged (no-op)
+- [ ] Add `format-docx` entry point to `pyproject.toml`; run `pip install -e .`
+- [ ] Implement `parse_length(s) -> EMU int` — handles `"0.75in"`, `"19mm"`, `"12pt"`
+
+#### Phase 2 — Page geometry
+- [ ] `set_page_size(section, width_str, height_str)`
+- [ ] `set_margins(section, cfg)` — maps `inside`/`outside` to `left_margin`/`right_margin`
+- [ ] `enable_mirror_margins(doc)` — injects `<w:mirrorMargins/>` into `doc.settings.element`
+- [ ] Wire `page-size`, `margins`, `mirror-margins` into `main()`; test with a real docx
+
+#### Phase 3 — Style spacing
+- [ ] `parse_line_spacing(s) -> (rule, value)` — handles all five format strings
+- [ ] `apply_style_spacing(doc, style_name, cfg)` — normalizes style names, sets `paragraph_format.*`
+- [ ] Wire `spacing:` into `main()`
+
+#### Phase 4 — Headers and footers
+- [ ] `_make_field_run(instruction)` — lxml sequence for `PAGE` field codes
+- [ ] `_set_tab_stops(paragraph, center_twips, right_twips)` — injects `w:tabs` XML
+- [ ] `build_header_paragraph(hdr_obj, left, center, right, font, size, italic, page_geom)`
+- [ ] `set_headers(doc, section, cfg)` — dispatches by `header-mode`
+- [ ] `set_footers(doc, section, cfg)`
+- [ ] Wire headers and footers into `main()`
+
+#### Phase 5 — Reuse clean_docx features
+- [ ] Import and wire `fix_hrules`, `collect_removals`, `insert_page_breaks`, `convert_fonts`, `find_heading`, `resolve_range` into `format_docx.main()`
+
+#### Phase 6 — Body paragraph formatting
+Applies inline paragraph formatting (indent, spacing) to body paragraphs within the range, skipping headings, centered/right-justified text, and any explicitly listed styles. Complements `spacing:` (which sets style-level defaults globally) with per-paragraph overrides for body text only.
+
+New YAML key:
+```yaml
+body-format:
+  first-line-indent: "0.5in"
+  line-spacing:      "double"    # same format strings as spacing:
+  space-before:      "0pt"
+  space-after:       "0pt"
+  skip-styles:                   # styles to leave untouched (in addition to auto-skips)
+    - "Block Text"
+    - "Caption"
+    - "Epigraph"
+```
+
+Auto-skip rules (no config needed):
+- Any `Heading *` style
+- Paragraph alignment is centered (`WD_ALIGN_PARAGRAPH.CENTER`)
+- Paragraph alignment is right-justified (`WD_ALIGN_PARAGRAPH.RIGHT`)
+- Paragraph alignment is distributed (`WD_ALIGN_PARAGRAPH.DISTRIBUTE`)
+
+Implementation:
+- [ ] `should_skip_paragraph(p, skip_styles)` — returns True for headings, non-left-aligned, or style in skip list
+- [ ] `apply_body_format(paragraphs, start_idx, end_idx, cfg, skip_styles)` — walks range, calls `should_skip_paragraph`, applies `paragraph_format.*` directly to each qualifying paragraph's `p.paragraph_format`
+- [ ] Wire `body-format:` into `main()` execution order (runs after `spacing:`, before headers)
+
+#### Phase 7 — End-to-end
+- [ ] Write `kdp.yaml` with KDP trim size (e.g. 5.5×8.5in) and margin specs
+- [ ] Write `print.yaml` with print publisher trim size and margin specs
+- [ ] End-to-end test on the Thunderwing docx
+- [ ] Update this section of `CLAUDE.md` with completed `format-docx` documentation

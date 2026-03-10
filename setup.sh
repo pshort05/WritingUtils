@@ -1,7 +1,11 @@
 #!/bin/bash
 # setup.sh — Install WritingUtils system-wide on Linux
 #
-# Installs clean-docx and clean-markdown as globally available commands.
+# Installs the following commands globally:
+#   clean-docx      — remove artifacts and normalize a Word .docx file
+#   clean-markdown  — normalize indentation/spacing in a Markdown file
+#   format-docx     — apply platform-specific layout (KDP, print) to a .docx file
+#
 # Uses pip in editable mode so edits to source take effect immediately.
 # Requires sudo for system-wide install.
 
@@ -62,7 +66,7 @@ fi
 # ---------------------------------------------------------------------------
 
 echo ""
-for cmd in clean-docx clean-markdown; do
+for cmd in clean-docx clean-markdown format-docx; do
     if command -v "${cmd}" &>/dev/null; then
         success "${cmd}  →  $(command -v ${cmd})"
     else
@@ -73,4 +77,4 @@ for cmd in clean-docx clean-markdown; do
 done
 
 echo ""
-echo "Done. Run 'clean-docx --help' or 'clean-markdown --help' to get started."
+echo "Done. Run 'clean-docx --help', 'clean-markdown --help', or 'format-docx --help' to get started."
