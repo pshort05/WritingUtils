@@ -4,22 +4,29 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-WritingUtils is a collection of Python utilities for formatting creative writing files for publishing. There are two tools:
+WritingUtils is a collection of Python utilities for formatting creative writing files for publishing.
 
+**Completed tools:**
 - **`clean-markdown`** — formats Markdown files with paragraph indentation and blank-line rules (no external dependencies)
-- **`clean-docx`** — formats Word `.docx` files for KDP/print-on-demand publishing (requires `python-docx`, `pyyaml`)
+- **`clean-docx`** — cleans Word `.docx` files: removes artifacts, normalizes paragraphs, converts fonts (requires `python-docx`, `pyyaml`)
+
+**In development:**
+- **`format-docx`** — applies platform-specific layout (page size, margins, headers/footers, spacing) for KDP and print publishing; configured by `kdp.yaml` / `print.yaml`
 
 ## Project structure
 
 ```
 src/writing_utils/
     __init__.py
+    _util.py             # shared: load_config(), setup_logging() — imported by all tools
     clean_markdown.py
     clean_docx.py
+    format_docx.py       # IN DEVELOPMENT — see implementation plan below
 tests/
     test_sample.md       # fixture: input
     output_sample.md     # fixture: expected output
-pyproject.toml
+pyproject.toml           # entry points: clean-docx, clean-markdown, format-docx
+setup.sh                 # system-wide install script
 push.sh                  # git push utility (reads from commit_message file)
 ```
 
@@ -33,11 +40,26 @@ This project uses `push.sh` for all git operations. **Do not commit or push dire
 
 ## Installation
 
+Use `setup.sh` for a system-wide install:
+
 ```bash
-pip install -e .
+./setup.sh
 ```
 
-This installs the `clean-markdown` and `clean-docx` entry points.
+Or manually:
+
+```bash
+pip install -e . --break-system-packages
+```
+
+This installs the `clean-markdown`, `clean-docx`, and `format-docx` entry points.
+
+**Note — egg-info ownership issue:** If the package was previously installed with `sudo pip install`, the `src/writing_utils.egg-info/` directory will be owned by root and subsequent installs will fail. Fix with:
+
+```bash
+sudo chown -R $USER:$USER src/writing_utils.egg-info
+pip install -e . --break-system-packages
+```
 
 ---
 
@@ -266,7 +288,8 @@ Everything else (page size, margins, header text/font, odd/even header enable, s
 
 #### Phase 1 — Skeleton
 - [ ] Create `format_docx.py` with `main()`, argparse, `apply_config()` — opens doc, saves unchanged (no-op)
-- [ ] Add `format-docx` entry point to `pyproject.toml`; run `pip install -e .`
+- [x] Add `format-docx` entry point to `pyproject.toml`
+- [ ] Run `pip install -e .` on current workstation to register entry point
 - [ ] Implement `parse_length(s) -> EMU int` — handles `"0.75in"`, `"19mm"`, `"12pt"`
 
 #### Phase 2 — Page geometry
