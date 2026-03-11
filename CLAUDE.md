@@ -116,6 +116,8 @@ clean-docx -c thunderwing.yaml --no-page-breaks --log-level DEBUG
 | `--clean` / `--no-clean` | Remove extra empty paragraphs within range |
 | `--page-breaks` / `--no-page-breaks` | Insert page break before each Heading 1 in range |
 | `--fix-hrules` / `--no-fix-hrules` | Convert fixed-width HR shapes to margin-relative borders |
+| `--indent-paragraphs` / `--no-indent-paragraphs` | Add first-line indent to body text paragraphs within range |
+| `--excerpt-font FONT` | Font identifying embedded written excerpts; applies 0.5" block indent with surrounding blank lines |
 | `--font-to FONT` | Convert all non-skipped fonts to this font |
 | `--font-skip FONT` | Font to preserve unchanged (repeatable) |
 | `--log-level LEVEL` | `NONE` \| `ERROR` \| `INFO` \| `DEBUG` (default: NONE) |
@@ -130,9 +132,11 @@ output: "Thunderwing Book 1 - clean.docx"
 start: "Prologue"        # heading text match (case-insensitive substring)
 end:   "The Luminarch"   # processing stops BEFORE this heading
 
-clean:       true
-page-breaks: true
-fix-hrules:  true
+clean:             true
+page-breaks:       true
+fix-hrules:        true
+indent-paragraphs: true
+excerpt-font:      "Roboto Mono"
 
 font-to: "Times New Roman"
 font-skip:
@@ -146,16 +150,22 @@ log-file:  thunderwing.log   # omit to log to stderr
 
 **`--clean`**
 Removes empty paragraphs within the range using three rules (applied in this order):
-1. Empty heading paragraphs are always removed (Word export artifacts).
+1. Empty **Heading 1** paragraphs are removed (Word/Google Docs export artifacts). Empty Heading 2+ paragraphs are preserved — they may be intentional visual scene-break separators.
 2. Single empty `normal` paragraphs between content are removed (double-Enter typing habit).
 3. Runs of 2+ consecutive empty paragraphs are collapsed to 1 (scene break preserved).
 Paragraphs with a bottom border (horizontal rules) are never removed.
 
 **`--fix-hrules`**
-Google Docs exports `---` as an inline drawing shape (`mc:AlternateContent`) with a hardcoded pixel width. This breaks with mirror margins for 2-sided printing. This feature replaces them with `w:pBdr` bottom borders, which are margin-relative and always span correctly. **Must run before `--clean`** — the code enforces this automatically.
+Handles two cases: (1) Google Docs `---` exports as `mc:AlternateContent` drawing shapes with hardcoded pixel widths — replaced with margin-relative `w:pBdr` bottom borders. (2) Empty Heading 2+ paragraphs used as scene-break separators that have no border — adds the same `w:pBdr` to make them visible. Skips empty Heading 2+ paragraphs that already contain a `<w:br type="page"/>` run (those are chapter-break containers, not scene separators). **Must run before `--clean`** — the code enforces this automatically.
 
 **`--page-breaks`**
-Inserts an explicit `<w:br w:type="page"/>` paragraph immediately before each non-empty Heading 1 in the range.
+Inserts an explicit `<w:br w:type="page"/>` paragraph immediately before each non-empty Heading 1 in the range. Skips if the Heading 1's immediate XML predecessor already contains a page-break run (avoids doubling up when the original document uses a Heading 2 container for chapter breaks).
+
+**`--indent-paragraphs`**
+Adds a first-line indent of 0.25 inches (~3 characters at 12pt) to body text paragraphs within the range, using `paragraph_format.first_line_indent`. Skips: empty paragraphs, any Heading style, center/right/distributed alignment, title-component paragraphs (every non-empty run is bold, italic, or both, immediately after a heading), and excerpt paragraphs identified by `--excerpt-font`. Once a plain-text body paragraph is encountered after a heading, title-component detection ends. Empty Heading 2+ scene-break paragraphs reset the heading-block state.
+
+**`--excerpt-font`**
+Formats embedded written excerpts (letters, journal entries, etc.) identified by a distinct font. For each contiguous group of excerpt paragraphs (empty gaps included), applies 0.5" left and right indents, and inserts a blank paragraph before and after the group if not already present. Font detection uses `w:rFonts` XML elements (covers run-level and paragraph-level settings). When used with `--indent-paragraphs`, excerpt paragraphs are automatically excluded from first-line indentation.
 
 **`--font-to` / `--font-skip`**
 Updates `w:rFonts` elements in four locations: document defaults, style definitions, paragraph-level run properties, and individual run properties. If **any** font attribute on a `w:rFonts` element matches a skip font, the entire element is left untouched (preserves monospace runs wholesale). Font conversion is document-wide (not range-restricted).
@@ -166,7 +176,9 @@ Features always run in this fixed order regardless of flag order:
 1. `--fix-hrules` (must precede clean so borders survive removal)
 2. `--clean`
 3. `--page-breaks`
-4. `--font-to`
+4. `--indent-paragraphs` (skips excerpt paragraphs when `--excerpt-font` is set)
+5. `--excerpt-font` (runs after clean so inserted blank lines aren't removed)
+6. `--font-to`
 
 ### Logging levels
 
@@ -183,6 +195,7 @@ Features always run in this fixed order regardless of flag order:
 - The `--end` heading itself is **not** processed — the range stops at the paragraph immediately before it.
 - After `--clean` removes paragraphs, paragraph indices shift. The script re-resolves `(start_idx, end_idx)` silently before each subsequent feature to keep indices accurate.
 - Boolean flags use `BooleanOptionalAction` — both `--clean` and `--no-clean` exist, allowing CLI to override a `true` set in the config file.
+- **OOXML `pPr` child ordering** — `_apply_hr_border` inserts `w:pBdr` and `w:ind` **before** `w:rPr` using `rPr_elem.addprevious(pBdr)`. The OOXML schema requires `pBdr` to precede `rPr`; appending to the end of `pPr` places it after `rPr`, which is invalid and causes Word to silently ignore the border. Always insert new `pPr` children before `w:rPr` when `rPr` is present.
 
 ---
 
@@ -205,20 +218,22 @@ format-docx -c print.yaml
 
 - **New file:** `src/writing_utils/format_docx.py`
 - **Shared utilities:** `load_config()` and `setup_logging()` extracted from `clean_docx.py` into `src/writing_utils/_util.py`; both tools import from there
-- **Reused functions** imported directly from `clean_docx.py` (no modification): `fix_hrules`, `collect_removals`, `insert_page_breaks`, `convert_fonts`, `find_heading`, `resolve_range`
+- **Reused functions** imported directly from `clean_docx.py` (no modification): `fix_hrules`, `collect_removals`, `insert_page_breaks`, `indent_paragraphs`, `format_excerpts`, `convert_fonts`, `find_heading`, `resolve_range`
 
 ### Execution order inside format-docx
 
 1. `fix-hrules` (must precede clean)
 2. `clean`
 3. `page-breaks`
-4. `font-to` (document-wide)
-5. `page-size` (section geometry)
-6. `margins` (includes mirror-margins XML)
-7. `spacing` (style-level defaults — applied globally)
-8. `body-format` (per-paragraph overrides within range — skips headings, centered/right text)
-9. `headers` (needs page geometry for tab stop positions)
-10. `footers`
+4. `indent-paragraphs` (skips excerpt paragraphs when excerpt-font is set)
+5. `excerpt-font` (runs after clean so inserted blank lines aren't removed)
+6. `font-to` (document-wide)
+7. `page-size` (section geometry)
+8. `margins` (includes mirror-margins XML)
+9. `spacing` (style-level defaults — applied globally)
+10. `body-format` (per-paragraph overrides within range — skips headings, centered/right text)
+11. `headers` (needs page geometry for tab stop positions)
+12. `footers`
 
 ### New YAML keys (beyond what clean-docx already supports)
 
@@ -312,7 +327,7 @@ Everything else (page size, margins, header text/font, odd/even header enable, s
 - [ ] Wire headers and footers into `main()`
 
 #### Phase 5 — Reuse clean_docx features
-- [ ] Import and wire `fix_hrules`, `collect_removals`, `insert_page_breaks`, `convert_fonts`, `find_heading`, `resolve_range` into `format_docx.main()`
+- [ ] Import and wire `fix_hrules`, `collect_removals`, `insert_page_breaks`, `indent_paragraphs`, `format_excerpts`, `convert_fonts`, `find_heading`, `resolve_range` into `format_docx.main()`
 
 #### Phase 6 — Body paragraph formatting
 Applies inline paragraph formatting (indent, spacing) to body paragraphs within the range, skipping headings, centered/right-justified text, and any explicitly listed styles. Complements `spacing:` (which sets style-level defaults globally) with per-paragraph overrides for body text only.

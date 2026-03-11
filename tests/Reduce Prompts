@@ -1,0 +1,2 @@
+claude is asking for permission way too much. Analyze the last 10 sessions and add rules to not ask for permission for things like running cat, grep, newlines, and other commands that I repeatedly authorize. In those cases, alert that they are happening with *** and proceed with approval. Tell me which commands are being added this way 
+

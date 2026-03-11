@@ -1,0 +1,18 @@
+input:  "Thunderwing1.docx"
+output: "Thunderwing1_clean.docx"
+
+start: "Prologue"        # heading text match (case-insensitive substring)
+end:   "Luminarch Cloister"  # processing stops BEFORE this heading
+
+clean:       true
+page-breaks: true
+fix-hrules:  true
+indent-paragraphs: true
+excerpt-font: "Roboto Mono"  # embedded written excerpts get 0.5" block indent
+
+font-to: "Times New Roman"
+font-skip:
+  - "Roboto Mono"        # preserves excerpt font unchanged during conversion
+
+log-level: INFO          # NONE | ERROR | INFO | DEBUG
+log-file:  clean.log     # omit to log to stderr

@@ -3,7 +3,8 @@
 Python utilities for formatting creative writing files for publishing.
 
 - **`clean-markdown`** — formats Markdown files with paragraph indentation and blank-line rules
-- **`clean-docx`** — formats Word `.docx` files for KDP/print-on-demand publishing
+- **`clean-docx`** — cleans Word `.docx` files: removes artifacts, normalizes paragraphs, converts fonts
+- **`format-docx`** — applies platform-specific layout (page size, margins, headers/footers) for KDP and print publishing *(in development)*
 
 ## Installation
 
@@ -11,7 +12,7 @@ Python utilities for formatting creative writing files for publishing.
 pip install -e .
 ```
 
-This installs the `clean-markdown` and `clean-docx` commands.
+This installs the `clean-markdown`, `clean-docx`, and `format-docx` commands.
 
 ## Usage
 
@@ -19,14 +20,16 @@ This installs the `clean-markdown` and `clean-docx` commands.
 # Format a Markdown file
 clean-markdown -i input.md -o output.md
 
-# Format a .docx file (with config file)
+# Clean a .docx file (with config file — recommended)
 clean-docx -c mybook.yaml
 
-# Format a .docx file (CLI only)
+# Clean a .docx file (CLI only)
 clean-docx -i input.docx -o output.docx --clean --page-breaks
 ```
 
-See `CLAUDE.md` for full documentation of all options.
+## Documentation
+
+- [clean-docx — full reference](docs/clean-docx.md)
 
 ## License
 
